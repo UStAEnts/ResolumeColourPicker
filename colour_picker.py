@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
+from concurrent.futures import ThreadPoolExecutor
+
 
 # =========================
 # CONFIGURATION
@@ -76,6 +78,10 @@ def button_stylesheet(colour: QColor, selected=False) -> str:
 
 class ColourPickerEngine(QWidget):
     def __init__(self):
+
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.session = requests.Session()
+
         super().__init__()
 
         self.setWindowTitle("Colour Picker Engine")
@@ -153,25 +159,30 @@ class ColourPickerEngine(QWidget):
     def send_api_request(self, column, row):
         layer = LAYER_MAP[column]
         clip = row + 1
-
         url = f"{API_BASE_URL}/layers/{layer}/clips/{clip}/connect"
-        print(f"POST {url}")
 
-        try:
-            requests.post(url, timeout=0.5)
-        except Exception as e:
-            print(f"API error: {e}")
-
-    def send_all_api_requests(self, row):
-        for column, layer in LAYER_MAP.items():
-            clip = row + 1
-            url = f"{API_BASE_URL}/layers/{layer}/clips/{clip}/connect"
-            print(f"POST {url}")
-
+        def task():
             try:
-                requests.post(url, timeout=0.5)
+                self.session.post(url, timeout=(0.05, 0.2))
             except Exception as e:
                 print(f"API error: {e}")
+
+        self.executor.submit(task)
+
+
+    def send_all_api_requests(self, row):
+        clip = row + 1
+
+        def task(layer):
+            url = f"{API_BASE_URL}/layers/{layer}/clips/{clip}/connect"
+            try:
+                self.session.post(url, timeout=(0.05, 0.2))
+            except Exception as e:
+                print(f"API error: {e}")
+
+        for layer in LAYER_MAP.values():
+            self.executor.submit(task, layer)
+
 
     # =========================
     # VISUAL STATE HANDLING
@@ -189,6 +200,7 @@ class ColourPickerEngine(QWidget):
 # =========================
 
 if __name__ == "__main__":
+    
     app = QApplication(sys.argv)
     window = ColourPickerEngine()
     window.show()
