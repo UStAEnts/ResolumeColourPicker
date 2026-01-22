@@ -4,7 +4,9 @@ import sys
 import requests
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton,
-    QGridLayout, QLabel, QVBoxLayout, QHBoxLayout
+    QGridLayout, QLabel, QVBoxLayout, QHBoxLayout,
+    QDialog, QTableWidget, QTableWidgetItem, QLineEdit,
+    QHeaderView, QColorDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QColor
@@ -21,18 +23,18 @@ ALL_COLUMN = "ALL"
 
 # Define colours as a dictionary
 _COLOUR_SET = {
-    "Red": "#FF0000",
-    "Blue": "#0000FF",
-    "Yellow": "#FFFF00",
-    "Orange": "#FFA500",
-    "Green": "#00B050",
-    "Purple": "#800080",
-    "Pink": "#FF69B4",
-    "White": "#FFFFFF",
+    "1 - Red": "#FF0000",
+    "2 - Blue": "#0000FF",
+    "3 - Yellow": "#FFFF00",
+    "4 - Orange": "#FFA500",
+    "5 - Green": "#00B050",
+    "6 - Purple": "#800080",
+    "7 - Pink": "#FF69B4",
+    "8 - White": "#FFFFFF",
 }
 
-# Convert to sorted list for consistent ordering in UI
-COLOUR_ROWS = sorted(_COLOUR_SET.items())
+# Convert to list maintaining order
+COLOUR_ROWS = list(_COLOUR_SET.items())
 
 WINDOW_SIZE = (900, 700)
 BUTTON_HEIGHT = 55
@@ -81,6 +83,116 @@ def button_stylesheet(colour: QColor, selected=False) -> str:
             font-size: 20px;
         }}
     """
+
+
+# =========================
+# COLOUR CONFIGURATION DIALOG
+# =========================
+
+class ColourConfigDialog(QDialog):
+    """Dialog for configuring colour palette"""
+    colours_updated = Signal(dict)  # Emits updated _COLOUR_SET
+    
+    def __init__(self, colour_set, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configure Colour Palette")
+        # Store as ordered list of (label, hex) to maintain positions
+        self.colour_items = list(colour_set.items())
+        self.hex_inputs = []  # Store references to hex input widgets
+        self.init_ui()
+        self.resize(600, 400)
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # Instructions
+        info_label = QLabel("Edit colour labels and pick hex values. Must have exactly 8 colours.")
+        layout.addWidget(info_label)
+        
+        # Table for editing colours
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Label", "Hex Value", "Pick"])
+        self.table.setRowCount(8)
+        
+        # Populate table with current colours in their original positions
+        for row, (label, hex_val) in enumerate(self.colour_items):
+            label_item = QLineEdit(label)
+            hex_item = QLineEdit(hex_val)
+            hex_item.setReadOnly(True)
+            
+            pick_btn = QPushButton("...")
+            pick_btn.clicked.connect(lambda checked, r=row: self.pick_colour(r))
+            
+            self.table.setCellWidget(row, 0, label_item)
+            self.table.setCellWidget(row, 1, hex_item)
+            self.table.setCellWidget(row, 2, pick_btn)
+            
+            self.hex_inputs.append(hex_item)
+        
+        # Resize columns to fit content
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        
+        layout.addWidget(self.table)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(self.save_changes)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    
+    def pick_colour(self, row):
+        """Open colour picker for the given row"""
+        current_hex = self.hex_inputs[row].text()
+        current_colour = QColor(current_hex)
+        
+        colour = QColorDialog.getColor(current_colour, self, "Pick colour")
+        
+        if colour.isValid():
+            self.hex_inputs[row].setText(colour.name())
+    
+    def save_changes(self):
+        """Save changes to colour set, maintaining position order from table"""
+        new_colours = {}
+        
+        # Read table in row order (0-7) to maintain positions
+        for row in range(8):
+            label_widget = self.table.cellWidget(row, 0)
+            hex_widget = self.hex_inputs[row]
+            
+            if label_widget is None or hex_widget is None:
+                continue
+                
+            label = label_widget.text().strip()
+            hex_val = hex_widget.text().strip()
+            
+            if not label or not hex_val:
+                continue
+            
+            # Ensure hex format
+            if not hex_val.startswith("#"):
+                hex_val = "#" + hex_val
+            
+            if len(hex_val) != 7:
+                continue
+            
+            new_colours[label] = hex_val
+        
+        if len(new_colours) == 8:
+            self.colours_updated.emit(new_colours)
+            self.accept()
 
 
 # =========================
@@ -179,6 +291,12 @@ class ColourPickerEngine(QWidget):
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(QLabel("Latency:"))
         status_layout.addWidget(self.latency_label)
+        
+        # Add configure button
+        config_btn = QPushButton("Configure Colours")
+        config_btn.clicked.connect(self.open_colour_config)
+        status_layout.addWidget(config_btn)
+        
         status_layout.addStretch()
         
         main_layout.addLayout(status_layout)
@@ -305,6 +423,32 @@ class ColourPickerEngine(QWidget):
         self.status_label.setText(status)
         self.latency_label.setText(f"{latency:.1f} ms" if latency > 0 else "-- ms")
         self.status_square.setStyleSheet(f"background-color: {colour}; border: 2px solid #333;")
+    
+    def open_colour_config(self):
+        """Open the colour configuration dialog"""
+        dialog = ColourConfigDialog(_COLOUR_SET, self)
+        dialog.colours_updated.connect(self.update_colours)
+        dialog.exec()
+    
+    def update_colours(self, new_colours):
+        """Update the colour palette and refresh UI"""
+        global _COLOUR_SET, COLOUR_ROWS
+        
+        _COLOUR_SET = new_colours
+        COLOUR_ROWS = list(_COLOUR_SET.items())
+        
+        # Clear and rebuild the button grid
+        while self.layout.count():
+            item = self.layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        self.buttons.clear()
+        self.base_colours.clear()
+        self.selected_in_column.clear()
+        
+        self._add_headers()
+        self._add_buttons()
 
 
 # =========================
