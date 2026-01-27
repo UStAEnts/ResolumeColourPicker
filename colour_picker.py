@@ -265,11 +265,16 @@ class ColourPickerEngine(QWidget):
         self.buttons = {}
         self.base_colours = {}
         
+        # Scene Master Mode
+        self.scene_master_mode = False
+        self.queued_changes = []  # List of (column, colour_hex) tuples
+        
         # Status heartbeat components
         self.heartbeat = StatusHeartbeat()
         self.status_label = QLabel("Initialising...")
         self.status_square = QLabel()
         self.latency_label = QLabel("-- ms")
+        self.scene_mode_label = QLabel("Live Mode")
         self.timer = QTimer()
         self.timer.timeout.connect(self.heartbeat.check_status)
 
@@ -292,6 +297,10 @@ class ColourPickerEngine(QWidget):
         status_layout.addWidget(QLabel("Latency:"))
         status_layout.addWidget(self.latency_label)
         
+        # Add scene mode indicator
+        self.scene_mode_label.setStyleSheet("font-weight: bold; color: #00AA00;")
+        status_layout.addWidget(self.scene_mode_label)
+        
         # Add configure button
         config_btn = QPushButton("Configure Colours")
         config_btn.clicked.connect(self.open_colour_config)
@@ -305,6 +314,31 @@ class ColourPickerEngine(QWidget):
         grid_widget = QWidget()
         grid_widget.setLayout(self.layout)
         main_layout.addWidget(grid_widget)
+        
+        # Add scene control buttons at bottom
+        scene_control_layout = QHBoxLayout()
+        
+        self.scene_master_btn = QPushButton("Scene Master")
+        self.scene_master_btn.setFixedHeight(BUTTON_HEIGHT)
+        self.scene_master_btn.clicked.connect(self.toggle_scene_master)
+        scene_control_layout.addWidget(self.scene_master_btn)
+        
+        # Add go/cancel buttons (hidden by default)
+        self.go_btn = QPushButton("GO")
+        self.go_btn.setFixedHeight(BUTTON_HEIGHT)
+        self.go_btn.setStyleSheet("background-color: #00AA00; color: white; font-weight: bold;")
+        self.go_btn.clicked.connect(self.send_queued_changes)
+        self.go_btn.hide()
+        scene_control_layout.addWidget(self.go_btn)
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setFixedHeight(BUTTON_HEIGHT)
+        self.cancel_btn.setStyleSheet("background-color: #FF6600; color: white; font-weight: bold;")
+        self.cancel_btn.clicked.connect(self.cancel_scene_master)
+        self.cancel_btn.hide()
+        scene_control_layout.addWidget(self.cancel_btn)
+        
+        main_layout.addLayout(scene_control_layout)
         
         # Set the main layout
         self.setLayout(main_layout)
@@ -347,14 +381,26 @@ class ColourPickerEngine(QWidget):
         colour_hex = _COLOUR_SET[colour_name]
         print(f"{column} → {COLOUR_ROWS[row][0]}")
 
-        
-
-        if column == ALL_COLUMN:
-            self.apply_row(row)
-            self.send_all_api_requests(colour_hex)
+        if self.scene_master_mode:
+            # Queue the change
+            if column == ALL_COLUMN:
+                # Queue for all layers
+                for col in LAYER_MAP.keys():
+                    self.queued_changes.append((col, colour_hex))
+                    self.select_single(col, row)
+            else:
+                # Queue for single layer
+                self.queued_changes.append((column, colour_hex))
+                self.select_single(column, row)
+            print(f"Queued: {len(self.queued_changes)} changes pending")
         else:
-            self.select_single(column, row)
-            self.send_api_request(column, colour_hex)
+            # Live mode - send immediately
+            if column == ALL_COLUMN:
+                self.apply_row(row)
+                self.send_all_api_requests(colour_hex)
+            else:
+                self.select_single(column, row)
+                self.send_api_request(column, colour_hex)
 
     def select_single(self, column, row):
         if column in self.selected_in_column:
@@ -423,6 +469,53 @@ class ColourPickerEngine(QWidget):
         self.status_label.setText(status)
         self.latency_label.setText(f"{latency:.1f} ms" if latency > 0 else "-- ms")
         self.status_square.setStyleSheet(f"background-color: {colour}; border: 2px solid #333;")
+    
+    def toggle_scene_master(self):
+        """Toggle scene master mode on/off"""
+        self.scene_master_mode = not self.scene_master_mode
+        
+        if self.scene_master_mode:
+            self.scene_mode_label.setText("SCENE MASTER MODE")
+            self.scene_mode_label.setStyleSheet("font-weight: bold; color: #FF6600;")
+            self.go_btn.show()
+            self.cancel_btn.show()
+            self.queued_changes = []
+            print("Scene Master Mode: ACTIVE")
+        else:
+            self.scene_mode_label.setText("Live Mode")
+            self.scene_mode_label.setStyleSheet("font-weight: bold; color: #00AA00;")
+            self.go_btn.hide()
+            self.cancel_btn.hide()
+            self.queued_changes = []
+            print("Scene Master Mode: INACTIVE")
+    
+    def send_queued_changes(self):
+        """Send all queued changes to Resolume"""
+        print(f"Sending {len(self.queued_changes)} queued changes...")
+        
+        # Group changes by column
+        changes_by_column = {}
+        for column, colour in self.queued_changes:
+            changes_by_column[column] = colour
+        
+        # Send each change
+        for column, colour in changes_by_column.items():
+            self.send_api_request(column, colour)
+        
+        print("All queued changes sent!")
+        self.toggle_scene_master()  # Exit scene master mode
+    
+    def cancel_scene_master(self):
+        """Cancel scene master mode without sending changes"""
+        print(f"Cancelled {len(self.queued_changes)} queued changes")
+        
+        # Reset button states
+        for column in self.selected_in_column.keys():
+            row = self.selected_in_column[column]
+            self._set_button_state(column, row, selected=False)
+        
+        self.selected_in_column = {}
+        self.toggle_scene_master()  # Exit scene master mode
     
     def open_colour_config(self):
         """Open the colour configuration dialog"""
