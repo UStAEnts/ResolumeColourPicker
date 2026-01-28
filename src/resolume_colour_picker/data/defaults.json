@@ -1,0 +1,22 @@
+{
+    "COLUMNS": ["ALL" , "Outer", "Middle", "Inner", "DJ"],
+    "ALL_COLUMN": "ALL",
+    "LAYER_MAP": {
+        "Inner": 1,
+        "Middle": 2,
+        "Outer": 3,
+        "DJ": 4
+    },
+    "COLOUR_SET": {
+        "1 - Red": "#FF0000",
+        "2 - Blue": "#0000FF",
+        "3 - Yellow": "#FFFF00",
+        "4 - Orange": "#FFA500",
+        "5 - Green": "#00B050",
+        "6 - Purple": "#800080",
+        "7 - Pink": "#FF69B4",
+        "8 - White": "#FFFFFF"
+    },
+    "WEBSERVER_IP": "localhost",
+    "WEBSERVER_PORT": 8080
+}
