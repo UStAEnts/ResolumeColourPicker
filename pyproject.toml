@@ -14,5 +14,6 @@ dependencies = [
     "PySide6_Essentials==6.10.1",
     "requests==2.32.5",
     "shiboken6==6.10.1",
-    "urllib3==2.6.3"
+    "urllib3==2.6.3",
+    "platformdirs==4.5.1"
 ]
