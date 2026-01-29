@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (
     QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
     QDialog, QTableWidget, QLineEdit,
-    QHeaderView, QColorDialog
+    QHeaderView
 )
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QTimer
 
 class SettingsDialog(QDialog):
     """Dialog for changing settings"""
@@ -23,8 +23,12 @@ class SettingsDialog(QDialog):
         self.config.reset(broadcast=False)
         self.config.broadcast_change("COLOUR_SET")
         self.config.broadcast_change("WEBSERVER_IP")
+        QTimer.singleShot(0, self._reopen_dialog)
+
         self.reject()
-        dialog = SettingsDialog(self.config, self.parent_obj)
+
+    def _reopen_dialog(self):
+        dialog = SettingsDialog(self.config, self.parent())
         dialog.exec()
         
     

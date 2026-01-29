@@ -1,4 +1,4 @@
-.PHONY: setup test run clean
+.PHONY: setup test run debug clean
 
 PYTHON := .venv/bin/python
 PIP := $(PYTHON) -m pip
