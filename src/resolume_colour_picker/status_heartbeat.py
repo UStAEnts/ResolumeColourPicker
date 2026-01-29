@@ -25,7 +25,7 @@ class StatusHeartbeat(QObject):
         """Poll the Resolume /product endpoint"""
         try:
             start_time = time.time()
-            response = self.session.get(self.resolume_product_url, timeout=2)
+            response = self.session.get(self.resolume_product_url, timeout=1)
             latency = (time.time() - start_time) * 1000  # Convert to milliseconds
             
             if response.status_code == 200:
