@@ -1,7 +1,7 @@
 import requests
 import time
 
-from PySide6.QtCore import Signal, QObject
+from PySide6.QtCore import Signal, QObject, Qt
 
 
 class StatusHeartbeat(QObject):
@@ -15,7 +15,7 @@ class StatusHeartbeat(QObject):
         self.config = config
 
         self.resolume_product_url = f"http://{self.config["WEBSERVER_IP"]}:{self.config["WEBSERVER_PORT"]}/api/v1/product"
-        self.config.value_changed.connect(self.config_callback)
+        self.config.value_changed.connect(self.config_callback, Qt.ConnectionType.QueuedConnection)
 
     def config_callback(self, key, value):
         if key == "WEBSERVER_IP" or key == "WEBSERVER_PORT":

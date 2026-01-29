@@ -1,37 +1,27 @@
 from PySide6.QtWidgets import (
     QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
     QDialog, QTableWidget, QLineEdit,
-    QHeaderView
+    QHeaderView, QMessageBox
 )
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt
 
-class SettingsDialog(QDialog):
+class APISettingsDialog(QDialog):
     """Dialog for changing settings"""
     
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.parent_obj = parent
         self.config = config
-        self.settings = [("WEBSERVER_IP", "input"), ("WEBSERVER_PORT","input"), ("RESET", "button", self.reset)]
+        self.settings = [
+            ("WEBSERVER_IP", "input"), 
+            ("WEBSERVER_PORT","input"), 
+        ]
         self.setting_val = []
         
         self.setWindowTitle("Settings")
         self.init_ui()
         self.resize(600, 400)
-    
-    def reset(self):
-        self.config.reset(broadcast=False)
-        self.config.broadcast_change("COLOUR_SET")
-        self.config.broadcast_change("WEBSERVER_IP")
-        QTimer.singleShot(0, self._reopen_dialog)
 
-        self.reject()
-
-    def _reopen_dialog(self):
-        dialog = SettingsDialog(self.config, self.parent())
-        dialog.exec()
-        
-    
     def init_ui(self):
         layout = QVBoxLayout()
         
@@ -54,7 +44,7 @@ class SettingsDialog(QDialog):
                 value = QLineEdit(self.config[setting[0]])
             elif setting[1] == "button":
                 value = QPushButton("...")
-                value.clicked.connect(lambda checked: setting[2]())
+                value.clicked.connect(lambda checked, fn=setting[2]: fn())
     
             self.table.setCellWidget(row, 0, label_item)
             self.table.setCellWidget(row, 1, value)
@@ -87,12 +77,13 @@ class SettingsDialog(QDialog):
         """Save changes"""
 
         for row in range(len(self.settings)):
-            val_widget = self.setting_val[row]
+            if self.settings[row][1] == "input":
+                val_widget = self.setting_val[row]
 
 
-            key = self.settings[row][0]
-            setting_val = val_widget.text().strip()
+                key = self.settings[row][0]
+                setting_val = val_widget.text().strip()
 
-            self.config[key] = setting_val
+                self.config[key] = setting_val
 
         self.accept()

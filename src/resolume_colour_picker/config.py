@@ -31,7 +31,7 @@ class Config(QObject):
 
     def reset(self, broadcast = True):
         for (key, value) in self.defaults.items():
-            self.set(key, value, broadcast=broadcast) 
+            self.set(key, value, broadcast=broadcast)
 
     def load(self):
         """Load cache data from disk."""

@@ -13,16 +13,25 @@ from PySide6.QtGui import QColor
 
 from resolume_colour_picker.status_heartbeat import StatusHeartbeat
 from resolume_colour_picker.colour_dialogue import ColourConfigDialog
-from resolume_colour_picker.settings_dialogue import SettingsDialog
+from resolume_colour_picker.api_settings_dialogue import APISettingsDialog
+from resolume_colour_picker.layer_map_dialogue import LayerMapDialog
 
 class ColourPickerEngine(QWidget):
     def __init__(self, config, consts):
         self.config = config
-        self.config.value_changed.connect(self.config_callback)
+        self.config.value_changed.connect(self.config_callback, Qt.ConnectionType.QueuedConnection)
         
         self.api_base_url = f"http://{self.config["WEBSERVER_IP"]}:{self.config["WEBSERVER_PORT"]}/api/v1/composition"
         self.colour_rows = list(self.config["COLOUR_SET"].items())
-
+        self.columns = self.config["LAYER_MAP"].keys()
+        self.all_columns = []
+        self.non_all_columns = []
+        for col in self.columns:
+            if self.config["LAYER_MAP"][col] == "ALL":
+                self.all_columns.append(col)
+            else:
+                self.non_all_columns.append(col)
+    
         self.consts = consts
 
         self.BASE_PAYLOAD = json.loads(
@@ -40,7 +49,6 @@ class ColourPickerEngine(QWidget):
         self.resize(*consts["WINDOW_SIZE"])
 
         self.layout = QGridLayout(self)
-        self.setLayout(self.layout)
 
         self.selected_in_column = {}
         self.buttons = {}
@@ -82,7 +90,16 @@ class ColourPickerEngine(QWidget):
             self._add_headers()
             self._add_buttons()
         
-        elif key == "COLUMNS":
+        elif key == "LAYER_MAP":
+
+            self.columns = self.config["LAYER_MAP"].keys()
+            self.all_columns = []
+            self.non_all_columns = []
+            for col in self.columns:
+                if self.config["LAYER_MAP"][col] == "ALL":
+                    self.all_columns.append(col)
+                else:
+                    self.non_all_columns.append(col)
             # Clear and rebuild the button grid
             while self.layout.count():
                 item = self.layout.takeAt(0)
@@ -146,16 +163,24 @@ class ColourPickerEngine(QWidget):
         self.scene_mode_label.setStyleSheet("font-weight: bold; color: #00AA00;")
         status_layout.addWidget(self.scene_mode_label)
         
-        # Add configure button
+        # Add buttons
         colour_btn = QPushButton("Configure Colours")
         colour_btn.clicked.connect(self.open_colour_config)
         status_layout.addWidget(colour_btn)
 
-        config_btn = QPushButton("Settings")
-        config_btn.clicked.connect(self.open_settings)
-        status_layout.addWidget(config_btn)
+        api_btn = QPushButton("API Settings")
+        api_btn.clicked.connect(self.open_api_settings)
+        status_layout.addWidget(api_btn)
+
+        layers_btn = QPushButton("Layer Mappings")
+        layers_btn.clicked.connect(self.open_layer_map_settings)
+        status_layout.addWidget(layers_btn)
+
+        reset_btn = QPushButton("!RESET!")
+        reset_btn.clicked.connect(self.reset)
+        status_layout.addWidget(reset_btn)
         
-        
+
         status_layout.addStretch()
         
         main_layout.addLayout(status_layout)
@@ -197,7 +222,7 @@ class ColourPickerEngine(QWidget):
         self._add_buttons()
 
     def _add_headers(self):
-        for col, name in enumerate(self.config["COLUMNS"]):
+        for col, name in enumerate(self.columns):
             label = QLabel(name)
             label.setAlignment(Qt.AlignCenter)
             label.setStyleSheet("font-weight: bold;font-size: 32px;")
@@ -208,7 +233,7 @@ class ColourPickerEngine(QWidget):
             colour = QColor(entry[1])  # hex is second element
             label = entry[0]  # label is first element
 
-            for col, column_name in enumerate(self.config["COLUMNS"]):
+            for col, column_name in enumerate(self.columns):
                 btn = QPushButton(label)
                 btn.setFixedHeight(self.consts["BUTTON_HEIGHT"])
                 btn.setStyleSheet(self.button_stylesheet(colour))
@@ -233,9 +258,9 @@ class ColourPickerEngine(QWidget):
 
         if self.scene_master_mode:
             # Queue the change
-            if column == self.config["ALL_COLUMN"]:
+            if column in self.all_columns:
                 # Queue for all layers
-                for col in self.config["LAYER_MAP"].keys():
+                for col in self.non_all_columns:
                     self.queued_changes.append((col, colour_hex))
                     self.select_single(col, row)
             else:
@@ -245,7 +270,7 @@ class ColourPickerEngine(QWidget):
             print(f"Queued: {len(self.queued_changes)} changes pending")
         else:
             # Live mode - send immediately
-            if column == self.config["ALL_COLUMN"]:
+            if column in self.all_columns:
                 self.apply_row(row)
                 self.send_all_api_requests(colour_hex)
             else:
@@ -261,7 +286,7 @@ class ColourPickerEngine(QWidget):
         self.selected_in_column[column] = row
 
     def apply_row(self, row):
-        for column in self.config["LAYER_MAP"].keys():
+        for column in self.non_all_columns:
             self.select_single(column, row)
 
     # =========================
@@ -293,8 +318,8 @@ class ColourPickerEngine(QWidget):
             except Exception as e:
                 print(f"API error: {e}")
 
-        for layer in self.config["LAYER_MAP"].values():
-            self.executor.submit(task, layer)
+        for col in self.non_all_columns:
+            self.executor.submit(task, self.config["LAYER_MAP"][col])
 
 
     # =========================
@@ -372,8 +397,15 @@ class ColourPickerEngine(QWidget):
         dialog = ColourConfigDialog(self.config, self)
         dialog.exec()
 
-    def open_settings(self):
+    def open_api_settings(self):
         """Open the colour configuration dialog"""
-        dialog = SettingsDialog(self.config, self)
+        dialog = APISettingsDialog(self.config, self)
         dialog.exec()
     
+    def open_layer_map_settings(self):
+        """Open the colour configuration dialog"""
+        dialog = LayerMapDialog(self.config, self)
+        dialog.exec()
+    
+    def reset(self):
+        self.config.reset(broadcast=True)

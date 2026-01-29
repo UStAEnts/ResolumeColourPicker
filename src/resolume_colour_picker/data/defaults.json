@@ -1,7 +1,6 @@
 {
-    "COLUMNS": ["ALL" , "Outer", "Middle", "Inner", "DJ"],
-    "ALL_COLUMN": "ALL",
     "LAYER_MAP": {
+        "All": "ALL",
         "Inner": 1,
         "Middle": 2,
         "Outer": 3,
