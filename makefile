@@ -22,6 +22,9 @@ test: .requirements-installed
 run: .requirements-installed
 	$(PYTHON) run.py
 
+debug: .requirements-installed
+	$(PYTHON) -X faulthandler run.py
+
 clean:
 	rm -rf .venv
 	rm -f .requirements-installed
