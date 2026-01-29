@@ -7,14 +7,14 @@
         "DJ": 4
     },
     "COLOUR_SET": {
-        "1 - Red": "#FF0000",
-        "2 - Blue": "#0000FF",
-        "3 - Yellow": "#FFFF00",
-        "4 - Orange": "#FFA500",
-        "5 - Green": "#00B050",
+        "1 - Red": "#ff0000",
+        "2 - Blue": "#0000ff",
+        "3 - Yellow": "#ffff00",
+        "4 - Orange": "#ffa500",
+        "5 - Green": "#00b050",
         "6 - Purple": "#800080",
-        "7 - Pink": "#FF69B4",
-        "8 - White": "#FFFFFF"
+        "7 - Pink": "#ff69b4",
+        "8 - White": "#ffffff"
     },
     "WEBSERVER_IP": "localhost",
     "WEBSERVER_PORT": "8080"

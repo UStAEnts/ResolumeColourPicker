@@ -23,7 +23,7 @@ run: .requirements-installed
 	$(PYTHON) run.py
 
 debug: .requirements-installed
-	$(PYTHON) -X faulthandler run.py
+	QT_FATAL_WARNINGS=1 $(PYTHON) -X faulthandler run.py
 
 clean:
 	rm -rf .venv
