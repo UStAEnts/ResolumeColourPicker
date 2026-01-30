@@ -57,6 +57,8 @@ class ColourPickerEngine(QWidget):
         # Scene Master Mode
         self.scene_master_mode = False
         self.queued_changes = []  # List of (column, colour_hex) tuples
+        self.standby_selections = {}  # Tracks which buttons are selected in standby mode
+        self.live_selections = {}  # Tracks which buttons are actually live
         
         # Status heartbeat components
         self.heartbeat = StatusHeartbeat(self.config)
@@ -126,14 +128,29 @@ class ColourPickerEngine(QWidget):
             int(colour.blue() * factor),
         )
 
+    def desaturate(self, colour: QColor, factor=0.5) -> QColor:
+        """Desaturate a colour for standby indication"""
+        h = colour.hue()
+        s = int(colour.saturation() * factor)
+        v = colour.value()
+        result = QColor()
+        result.setHsv(h, s, v)
+        return result
 
-    def button_stylesheet(self, colour: QColor, selected=False) -> str:
+    def button_stylesheet(self, colour: QColor, selected=False, standby=False) -> str:
         border = "3px solid black" if selected else "1px solid #444"
         text_colour = "black" if colour.lightness() > 120 else "white"
+        
+        # Apply standby styling if in standby mode
+        if standby:
+            display_colour = self.desaturate(colour)
+            border = "3px dashed #999"
+        else:
+            display_colour = colour
 
         return f"""
             QPushButton {{
-                background-color: {colour.name()};
+                background-color: {display_colour.name()};
                 color: {text_colour};
                 border: {border};
                 border-radius: 6px;
@@ -261,10 +278,16 @@ class ColourPickerEngine(QWidget):
             if column in self.all_columns:
                 # Queue for all layers
                 for col in self.non_all_columns:
+                    # Remove any existing queued changes for this column
+                    self.queued_changes = [(c, clr) for c, clr in self.queued_changes if c != col]
+                    # Add new change
                     self.queued_changes.append((col, colour_hex))
                     self.select_single(col, row)
             else:
                 # Queue for single layer
+                # Remove any existing queued changes for this column
+                self.queued_changes = [(c, clr) for c, clr in self.queued_changes if c != column]
+                # Add new change
                 self.queued_changes.append((column, colour_hex))
                 self.select_single(column, row)
             print(f"Queued: {len(self.queued_changes)} changes pending")
@@ -278,13 +301,54 @@ class ColourPickerEngine(QWidget):
                 self.send_api_request(column, colour_hex)
 
     def select_single(self, column, row):
+        # In Scene Master mode, allow deselecting a standby selection by clicking it again
+        if self.scene_master_mode and (column, row) in self.standby_selections:
+            # Deselect the standby selection
+            self._set_button_state(column, row, selected=False, standby=False)
+            self.standby_selections.pop((column, row), None)
+            # Remove from queued changes
+            self.queued_changes = [(c, clr) for c, clr in self.queued_changes if c != column]
+            # Keep live selection in selected_in_column if it exists for this column
+            if (column, row) not in self.live_selections:
+                # Find if there's a live selection in this column
+                for (col, r) in self.live_selections.keys():
+                    if col == column:
+                        self.selected_in_column[column] = r
+                        break
+            return
+        
         if column in self.selected_in_column:
             prev_row = self.selected_in_column[column]
-            self._set_button_state(column, prev_row, selected=False)
+            # In Scene Master mode, always deselect previous standby selections
+            # but keep live selections visible
+            if self.scene_master_mode:
+                if (column, prev_row) in self.standby_selections:
+                    # Deselect previous standby selection
+                    self._set_button_state(column, prev_row, selected=False, standby=False)
+                    self.standby_selections.pop((column, prev_row), None)
+                # Don't deselect live selections - keep them visible
+            else:
+                # In live mode, always deselect previous selection
+                is_prev_standby = (column, prev_row) in self.standby_selections
+                self._set_button_state(column, prev_row, selected=False, standby=is_prev_standby)
 
-        self._set_button_state(column, row, selected=True)
+        # In Scene Master mode, check if this is a new selection or keeping a live one
+        if self.scene_master_mode:
+            # If this selection was already live, keep it in live style (not standby)
+            is_standby = (column, row) not in self.live_selections
+            self._set_button_state(column, row, selected=True, standby=is_standby)
+            # Only track as standby if it's a new selection
+            if is_standby:
+                self.standby_selections[(column, row)] = True
+            else:
+                # Remove from standby if it's a live selection
+                self.standby_selections.pop((column, row), None)
+        else:
+            self._set_button_state(column, row, selected=True, standby=False)
+            self.live_selections[(column, row)] = True
+            self.standby_selections.pop((column, row), None)
+        
         self.selected_in_column[column] = row
-
     def apply_row(self, row):
         for column in self.non_all_columns:
             self.select_single(column, row)
@@ -326,11 +390,17 @@ class ColourPickerEngine(QWidget):
     # VISUAL STATE HANDLING
     # =========================
 
-    def _set_button_state(self, column, row, selected):
+    def _set_button_state(self, column, row, selected, standby=False):
         btn = self.buttons[(column, row)]
         base_colour = self.base_colours[(column, row)]
-        colour = self.darken(base_colour) if selected else base_colour
-        btn.setStyleSheet(self.button_stylesheet(colour, selected))
+        
+        if selected:
+            # When selected, darken the colour
+            colour = self.darken(base_colour)
+        else:
+            colour = base_colour
+        
+        btn.setStyleSheet(self.button_stylesheet(colour, selected, standby=standby))
     
     def setup_heartbeat(self):
         """Set up the status heartbeat polling"""
@@ -355,6 +425,14 @@ class ColourPickerEngine(QWidget):
             self.go_btn.show()
             self.cancel_btn.show()
             self.queued_changes = []
+            # Save current live selections from selected_in_column
+            self.live_selections = {}
+            for column, row in self.selected_in_column.items():
+                self.live_selections[(column, row)] = True
+            # Display all current live selections with live style (solid border)
+            self.standby_selections = {}
+            for (column, row) in self.live_selections.keys():
+                self._set_button_state(column, row, selected=True, standby=False)
             print("Scene Master Mode: ACTIVE")
         else:
             self.scene_mode_label.setText("Live Mode")
@@ -362,6 +440,7 @@ class ColourPickerEngine(QWidget):
             self.go_btn.hide()
             self.cancel_btn.hide()
             self.queued_changes = []
+            self.standby_selections = {}
             print("Scene Master Mode: INACTIVE")
     
     def send_queued_changes(self):
@@ -377,20 +456,56 @@ class ColourPickerEngine(QWidget):
         for column, colour in changes_by_column.items():
             self.send_api_request(column, colour)
         
+        # Deselect old live selections that are being replaced by standby selections
+        for (column, row) in list(self.live_selections.keys()):
+            # If this column has a new standby selection, deselect the old live one
+            if any(col == column for col, _ in self.standby_selections.keys()):
+                self._set_button_state(column, row, selected=False, standby=False)
+                self.live_selections.pop((column, row), None)
+        
+        # Update standby selections to be the new live selections
+        # This makes the dashed-border buttons become the new live selections
+        for (column, row) in list(self.standby_selections.keys()):
+            # Update the button styling to remove dashed border (now live)
+            self._set_button_state(column, row, selected=True, standby=False)
+            # Track as live selection
+            self.live_selections[(column, row)] = True
+            self.selected_in_column[column] = row
+        
         print("All queued changes sent!")
-        self.toggle_scene_master()  # Exit scene master mode
+        
+        # Clear state and exit scene master mode
+        self.queued_changes = []
+        self.standby_selections = {}
+        self.scene_master_mode = False
+        self.scene_mode_label.setText("Live Mode")
+        self.scene_mode_label.setStyleSheet("font-weight: bold; color: #00AA00;")
+        self.go_btn.hide()
+        self.cancel_btn.hide()
     
     def cancel_scene_master(self):
         """Cancel scene master mode without sending changes"""
         print(f"Cancelled {len(self.queued_changes)} queued changes")
         
-        # Reset button states
-        for column in self.selected_in_column.keys():
-            row = self.selected_in_column[column]
-            self._set_button_state(column, row, selected=False)
+        # Reset all buttons that were in standby mode to unselected
+        for (column, row) in list(self.standby_selections.keys()):
+            self._set_button_state(column, row, selected=False, standby=False)
         
-        self.selected_in_column = {}
-        self.toggle_scene_master()  # Exit scene master mode
+        # Restore buttons that were live before entering Scene Master mode
+        for (column, row) in list(self.live_selections.keys()):
+            self._set_button_state(column, row, selected=True, standby=False)
+            self.selected_in_column[column] = row
+        
+        # Clear standby selections
+        self.standby_selections = {}
+        self.queued_changes = []
+        
+        # Exit scene master mode
+        self.scene_master_mode = False
+        self.scene_mode_label.setText("Live Mode")
+        self.scene_mode_label.setStyleSheet("font-weight: bold; color: #00AA00;")
+        self.go_btn.hide()
+        self.cancel_btn.hide()
     
     def open_colour_config(self):
         """Open the colour configuration dialog"""
